@@ -211,4 +211,4 @@
 
 (define numex-mapAddN
   (mlet "map" numex-map
-        "CHANGE (notice map is now in NUMEX scope)"))
+        (fun "f1" "i" (fun "f2" "list" (call (call (var "map") (fun "adder" "x" (add (var "i") (var "x")))) (var "list"))))))

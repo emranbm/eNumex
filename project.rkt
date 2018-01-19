@@ -29,7 +29,7 @@
 
 
 (struct munit   ()      #:transparent) ;; unit value -- good for ending a list
-(struct ismunit (e)     #:transparent) ;; if e1 is unit then 1 else 0
+(struct ismunit (exp)     #:transparent) ;; if exp is unit then 1 else 0
 
 ;; a closure is not in "source" programs; it is what functions evaluate to
 (struct closure (env fun) #:transparent) 
@@ -87,6 +87,7 @@
 ;; "in real life" it would be a helper function of eval-exp.
 (define (eval-under-env e env)
   (cond [(int? e) e]
+        [(munit? e) e]
         [(var? e) 
          (envlookup env (var-name e))]
         [(add? e) 
@@ -159,6 +160,11 @@
            (if (apair? p)
              (eval-under-env (apair-second p) env)
              (error (format "~v is not an apair" p))))]
+        [(ismunit? e)
+         (let ([v1 (eval-under-env (ismunit-exp e) env)])
+           (if (munit? v1)
+               (int 1)
+               (int 0)))]
         [#t (error (format "Bad NUMEX expression: ~v" e))]))
 
 ;; Do NOT change

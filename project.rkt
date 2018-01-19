@@ -9,14 +9,20 @@
 ;; Add the missing ones
 
 (struct int  (num)    #:transparent)  ;; a constant number, e.g., (int 17)
-(struct bool (val) #:transparent) ;; a boolean, e.g, (bool #t)
 (struct var  (name) #:transparent)  ;; a variable
 (struct apair (first second) #:transparent)
 
 (struct add  (e1 e2)  #:transparent)  ;; add two expressions
 (struct mult  (e1 e2)  #:transparent)  ;; multiply two expressions
 (struct neg (e))
+(struct islthan (e1 e2) #:transparent)
 
+(struct ifzero (e1 e2 e3) #:transparent)
+(struct ifgthan (e1 e2 e3 e4) #:transparent)
+(struct mlet (s e1 e2) #:transparent)
+
+(struct first (apair) #:transparent)
+(struct second (apair) #:transparent)
 
 (struct fun  (nameopt formal body) #:transparent) ;; a recursive(?) 1-argument function
 (struct call (funexp actual)       #:transparent) ;; function call
@@ -81,7 +87,6 @@
 ;; "in real life" it would be a helper function of eval-exp.
 (define (eval-under-env e env)
   (cond [(int? e) e]
-        [(bool? e) e]
         [(var? e) 
          (envlookup env (var-name e))]
         [(add? e) 
@@ -103,10 +108,58 @@
         [(neg? e)
          (let ([v (eval-under-env (neg-e e) env)])
            (cond [(int? v) (int (- (int-num v)))]
-                 [(bool? v) (bool (not (bool-val v)))]
-                 [#t (error "NUMEX negation is just for int and bool types")]
+                 [#t (error "NUMEX negation is just for int type")]
            ))]
-        [#t (error (format "bad NUMEX expression: ~v" e))]))
+        [(fun? e)
+         (closure env e)]
+        [(islthan? e)
+         (let ([v1 (eval-under-env (islthan-e1 e) env)]
+               [v2 (eval-under-env (islthan-e2 e) env)])
+           (if (< v1 v2)
+               (int 1)
+               (int 0))
+           )]
+        [(ifzero? e)
+         (let ([v1 (eval-under-env (ifzero-e1 e) env)])
+           (if (equal? v1 (int 0))
+               (eval-under-env (ifzero-e2 e) env)
+               (eval-under-env (ifzero-e3 e) env)
+               ))]
+        [(ifgthan? e)
+         (let ([v1 (eval-under-env (ifgthan-e1 e) env)]
+               [v2 (eval-under-env (ifgthan-e2 e) env)])
+           (if (> v1 v2)
+               (eval-under-env (ifgthan-e3 e) env)
+               (eval-under-env (ifgthan-e4 e) env)
+               ))]
+        [(mlet? e)
+         (let ([newEnv (append env '((cons (mlet-s e) (eval-under-env (mlet-e1 e) env))))])
+           (eval-under-env (mlet-e2 e) newEnv)
+           )]
+        [(call? e)
+         (let ([v1 (eval-under-env (call-funexp e) env)]
+               [v2 (eval-under-env (call-actual e) env)])
+           (if (closure? v1)
+               (let ([body (fun-body (closure-fun v1))]
+                     [newEnv (append env '((cons (fun-formal (closure-fun v1)) v2) (cons (fun-nameopt (closure-fun v1)) v1)))])
+                 (eval-under-env body newEnv)
+                 )
+               (error (format "~v is not a function" v1))))]
+        [(apair? e)
+         (let ([v1 (eval-under-env (apair-first e) env)]
+               [v2 (eval-under-env (apair-second e) env)])
+           (apair v1 v2))]
+        [(first? e)
+         (let ([p (first-apair e)])
+           (if (apair? p)
+             (eval-under-env (apair-first p) env)
+             (error (format "~v is not an apair" p))))]
+        [(second? e)
+         (let ([p (second-apair e)])
+           (if (apair? p)
+             (eval-under-env (apair-second p) env)
+             (error (format "~v is not an apair" p))))]
+        [#t (error (format "Bad NUMEX expression: ~v" e))]))
 
 ;; Do NOT change
 (define (eval-exp e)

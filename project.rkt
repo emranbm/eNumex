@@ -203,7 +203,11 @@
 
 ;; Problem 4
 
-(define numex-map "CHANGE")
+(define numex-map
+  (fun "f1" "f" (fun "f2" "list" (ifmunit (var "list")
+                                          (munit)
+                                          (apair (call (var "f") (first (var "list"))) (call (var "f2") (second (var "list")))))
+                                  )))
 
 (define numex-mapAddN
   (mlet "map" numex-map

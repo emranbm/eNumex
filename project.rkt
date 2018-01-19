@@ -34,12 +34,15 @@
 ;; a closure is not in "source" programs; it is what functions evaluate to
 (struct closure (env fun) #:transparent) 
 
-;; General-purpose functions
+;; General-purpose functions:
+(define (listfirst lst)
+  (list-ref lst 0))
+
 (define (racket-to-numex r)
   (cond [(var? r) r]
         [(int? r) r]
         [(number? r) (int r)]
-        [#t "ERROR: Invalid type"]
+        [#t (error "Invalid type")]
          )
   )
 
@@ -47,26 +50,26 @@
   (cond [(int? r) (int-num r)]
         [(number? r) r]
         [(string? r) r]
-        [#t "ERROR: Invalid type"]
+        [#t (error "Invalid type")]
          )
   )
 
 (define (racketList-to-numexList rlist)
   (cond [(equal? (length rlist) 0) (munit)]
-        [#t (apair (first rlist) (racketList-to-numexList (rest rlist)))]
+        [#t (apair (listfirst rlist) (racketList-to-numexList (rest rlist)))]
          ))
 
 ;; Problem 1
 
 (define (racketlist->numexlist xs)
-  (let ([lst (map racket-to-numex xs)])
-    (racketList-to-numexList lst)
-    )
+  ;(let ([lst (map racket-to-numex xs)])
+    (racketList-to-numexList xs)
+;    )
   )
 
 (define (numexlist->racketlist xs)
   (cond [(munit? xs) '()]
-        [#t (append (list (numex-to-racket (apair-first xs))) (numexlist->racketlist (apair-second xs)))]
+        [#t (append (list (apair-first xs)) (numexlist->racketlist (apair-second xs)))]
    )
   )
 
@@ -74,10 +77,10 @@
 
 ;; lookup a variable in an environment
 ;; Complete this function
-(define (envlookup env str)
-  (cond [(null? env) (error "unbound variable during evaluation" str)]
-        [(equal? (car (first env)) str) (cdr (first env))]
-        [#t (envlookup (rest env) str)]
+(define (envlookup env str e)
+  (cond [(null? env) (error "unbound variable during evaluation" str e env)]
+        [(equal? (car (listfirst env)) str) (cdr (listfirst env))]
+        [#t (envlookup (rest env) str e)]
         )
   )
 
@@ -88,8 +91,9 @@
 (define (eval-under-env e env)
   (cond [(int? e) e]
         [(munit? e) e]
+        [(closure? e) e]
         [(var? e) 
-         (envlookup env (var-name e))]
+         (eval-under-env (envlookup env (var-name e) e) env)]
         [(add? e) 
          (let ([v1 (eval-under-env (add-e1 e) env)]
                [v2 (eval-under-env (add-e2 e) env)])
@@ -116,25 +120,31 @@
         [(islthan? e)
          (let ([v1 (eval-under-env (islthan-e1 e) env)]
                [v2 (eval-under-env (islthan-e2 e) env)])
-           (if (< v1 v2)
-               (int 1)
-               (int 0))
-           )]
+           (if (and (int? v1) (int? v2))
+               (if (< (int-num v1) (int-num v2))
+                   (int 1)
+                   (int 0))
+               (error "Illegal type")
+           ))]
         [(ifzero? e)
          (let ([v1 (eval-under-env (ifzero-e1 e) env)])
-           (if (equal? v1 (int 0))
-               (eval-under-env (ifzero-e2 e) env)
-               (eval-under-env (ifzero-e3 e) env)
+           (if (int? v1)
+               (if (equal? v1 (int 0))
+                   (eval-under-env (ifzero-e2 e) env)
+                   (eval-under-env (ifzero-e3 e) env))
+               (error "First arg of ifzero is not of type int")
                ))]
         [(ifgthan? e)
          (let ([v1 (eval-under-env (ifgthan-e1 e) env)]
                [v2 (eval-under-env (ifgthan-e2 e) env)])
-           (if (> v1 v2)
-               (eval-under-env (ifgthan-e3 e) env)
-               (eval-under-env (ifgthan-e4 e) env)
+           (if (and (int? v1) (int? v2))
+               (if (> (int-num v1) (int-num v2))
+                   (eval-under-env (ifgthan-e3 e) env)
+                   (eval-under-env (ifgthan-e4 e) env))
+               (error "Illegal type")
                ))]
         [(mlet? e)
-         (let ([newEnv (append env '((cons (mlet-s e) (eval-under-env (mlet-e1 e) env))))])
+         (let ([newEnv (append (list (cons (mlet-s e) (eval-under-env (mlet-e1 e) env))) env)])
            (eval-under-env (mlet-e2 e) newEnv)
            )]
         [(call? e)
@@ -142,8 +152,11 @@
                [v2 (eval-under-env (call-actual e) env)])
            (if (closure? v1)
                (let ([body (fun-body (closure-fun v1))]
-                     [newEnv (append env '((cons (fun-formal (closure-fun v1)) v2) (cons (fun-nameopt (closure-fun v1)) v1)))])
-                 (eval-under-env body newEnv)
+                     [newEnv (append (list (cons (fun-formal (closure-fun v1)) v2)) (closure-env v1))])
+                 (if (null? (fun-nameopt (closure-fun v1)))
+                     (eval-under-env body newEnv)
+                     (eval-under-env body (append (list (cons (fun-nameopt (closure-fun v1)) v1)) newEnv))
+                     )
                  )
                (error (format "~v is not a function" v1))))]
         [(apair? e)
@@ -151,12 +164,12 @@
                [v2 (eval-under-env (apair-second e) env)])
            (apair v1 v2))]
         [(first? e)
-         (let ([p (first-apair e)])
+         (let ([p (eval-under-env (first-apair e) env)])
            (if (apair? p)
              (eval-under-env (apair-first p) env)
              (error (format "~v is not an apair" p))))]
         [(second? e)
-         (let ([p (second-apair e)])
+         (let ([p (eval-under-env (second-apair e) env)])
            (if (apair? p)
              (eval-under-env (apair-second p) env)
              (error (format "~v is not an apair" p))))]
@@ -170,3 +183,28 @@
 ;; Do NOT change
 (define (eval-exp e)
   (eval-under-env e null))
+
+;; Problem 3
+
+(define (ifmunit e1 e2 e3)
+  (ifzero (add (ismunit e1) (int -1)) e2 e3)
+   )
+
+(define (mlet* bs e2)
+  (if (null? bs)
+      e2
+      (let ([binding (listfirst bs)])
+        (mlet (car binding) (cdr binding) (mlet* (rest bs) e2))
+        )))
+
+(define (ifeq e1 e2 e3 e4)
+  (ifzero (add e1 (neg e2)) e3 e4)
+   )
+
+;; Problem 4
+
+(define numex-map "CHANGE")
+
+(define numex-mapAddN
+  (mlet "map" numex-map
+        "CHANGE (notice map is now in NUMEX scope)"))
